@@ -9,63 +9,48 @@ CATEGORIES = {
               "Video": [".avi", ".mp4", ".mov", ".mkv"],
              "Images": [".jpeg", ".png", ".jpg", ".svg", ".gif"],
           "Documents": [".doc", ".docx", ".txt", ".pdf", ".xlsx", ".pptx"],
+             "Python": [".py"],
               "Other": []
               }
 
 CYRILLIC_SYMBOLS = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяєіїґ"
 TRANSLATION = ("a", "b", "v", "g", "d", "e", "jo", "zh", "z", "y", "j", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u",
-               "f", "h", "ts", "ch", "sh", "sch", "", "y", "'", "e", "yu", "ya", "je", "i", "ji", "g")
-
+               "f", "h", "ts", "ch", "sh", "sch", "`", "y", "'", "e", "yu", "ya", "je", "i", "ji", "g")
 TRANS = {}
+for c, l in zip(CYRILLIC_SYMBOLS, TRANSLATION):
+    TRANS[c] = l
+    TRANS[c.upper()] = l.upper()
 
-def prepare_trans() -> None:
-    for c, l in zip(CYRILLIC_SYMBOLS, TRANSLATION):
-        TRANS[ord(c)] = l
-        TRANS[ord(c.upper())] = l.upper()
-    return
-
-def normalize_name(file_name:str) -> str: 
-    file_name_split = file_name.split(".")
+def normalize(file_name:str) -> str:    # +++
     
+    name = str(Path(file_name).stem)
     result = ""
-    name = file_name_split[0]
-    for n in range(len(file_name_split) - 2):
-        name += "_" + file_name_split[n+1]
     for i in range(len(name)):
-        if name[i] == " ":
-            result += " "
-        elif "0" <= name[i] <= "9":         # numbers
+        if "0" <= name[i] <= "9" or "a" <= name[i] <= "z" or "A" <= name[i] <= "Z": 
             result += name[i]
-        elif "a" <= name[i] <= "z":         # a..z
-            result += name[i]
-        elif "A" <= name[i] <= "Z":         # A..Z
-            result += name[i]
-        elif ord(name[i]) in TRANS:         # cyrylic
-            result += TRANS[ord(name[i])]
+        elif name[i] in TRANS:           # cyrylic
+            result += TRANS[name[i]]
         else:
             result += "_"
-    return result
+    return result + str(Path(file_name).suffix)
 
-def normalize_extension(file_name:str) -> str:
-    file_name_split = file_name.split(".")
-    ext = "."
-    if len(file_name_split) > 1: # file extension != ""
-        ext += file_name_split[-1]
-    return ext
+def archive_unpack(dir:Path) -> None:   # +++ ?list(CATEGORIES.keys())[0]
+    
+    category_arc = list(CATEGORIES.keys())[0]  
+                # "Archives" must be first in the list (dict CATEGORIES) !!!
+    path_arc = dir.joinpath(category_arc)
+    if path_arc.exists():
+        for element_file in path_arc.glob("*"):
+            if element_file.is_file() and str(element_file.suffix) in list(CATEGORIES.values())[0]:
+                shutil.unpack_archive(element_file, path_arc.joinpath(element_file.stem))
 
-def normalize(file_name:str) -> str:
-    return normalize_name(file_name) + normalize_extension(file_name)
-
-
-def del_empty_tree(path:Path) -> None:
+def del_empty_tree(path:Path) -> None:  # +++ 
     
     for element in path.glob("**/*"):
-        if element.is_dir():           
-            if str(element).split("\\")[-1] not in CATEGORIES:
-                shutil.rmtree(element)                
-    
+        if element.is_dir() and element.stem not in CATEGORIES:
+            shutil.rmtree(element)  
 
-def get_categories(file:Path) -> str:
+def get_categories(file:Path) -> str:   # +++
     
     ext = file.suffix.lower()
     for cat, exts in CATEGORIES.items():
@@ -73,68 +58,60 @@ def get_categories(file:Path) -> str:
             return cat
     return "Other"
 
-
-def move_file(file:Path, category:str, root_dir:Path) -> None:
+def move_file(file:Path, category:str, root_dir:Path, is_replace) -> None:  # +++
     
     target_dir = root_dir.joinpath(category)
     if not target_dir.exists():
         target_dir.mkdir()
-    
     new_path = target_dir.joinpath(normalize(file.name))
     
-    file.replace(new_path)          # replase if exist
-    
-    # if not new_path.exists():     # NOT replase if exist
-        # file.replace(new_path)
+    if new_path.exists() and new_path != file and not is_replace:
+        while new_path.exists():
+            new_path = new_path.with_stem(new_path.stem + "_")
+    file.replace(new_path)
 
-                
-def archive_unpack(root_dir:Path) -> None:
+def sort_folder(path:Path, is_replace) -> None:     # +++
     
-    category = list(CATEGORIES.keys())[0]  
-                # "Archives" must be first in the list (dict CATEGORIES) !!!
-    path = Path(str(root_dir) + "\\" + category)
-    if path.exists():
-        for element in path.glob("**/*"):
-            if element.is_file() and normalize_extension(str(element)) in list(CATEGORIES.values())[0]:            
-                shutil.unpack_archive(element, (str(path) + "\\" + normalize_name(str(element.name))))
-    
-
-def sort_folder(path:Path) -> None:
-    
-     for element in path.glob("**/*"):
+    for element in path.glob("**/*"):
         if element.is_file():
             category = get_categories(element)
-            move_file(element, category, path)
+            move_file(element, category, path, is_replace)
 
+def print_and_write(text:str, is_echo:bool, file_dscr):  # +++
 
-def list_files(path:Path, echo_list=True) -> None:
+    file_dscr.write(text + "\n")    # to file
+    if is_echo: print(text)         # to screen (only main dir)
+
+def list_files_write(el_path:Path, echo_list=False) -> None:   # +++ ?"{:>3}".format(count)
     
-    file_list = str(path) + "\\" + "_file_list_.txt"
+    FILE_LIST_TITLE = "\t_ List Of Files: _"
+    file_list = el_path.joinpath("_file_list_.txt")
+    count = 0
+    
     with open(file_list, 'w') as file_out:
-        file_out.write("        List Of Files: ")
-        if echo_list: print("        List Of Files: ")
-    
-    with open(file_list, 'a') as file_out:
-        for element in path.glob("**/*"):
-            if str(element).split("\\")[-1] != file_list.split("\\")[-1]:
-                if echo_list: print(element)
-                file_out.write("\n" + str(element))
-        
+        print_and_write(FILE_LIST_TITLE, echo_list, file_out)
+        for element in el_path.glob("**/*"):
+            if element.is_file() and element != file_list:
+                count += 1
+                print_and_write("{:>3}".format(count) + f". {str(element)[len(str(el_path))+1:]}", 
+                                echo_list, file_out)
 
-def list_files_category(path:Path) -> None:
-    for element in path.glob("**/*"):
-        if element.is_dir():
-            category = str(element).split("\\")[-1]
-            list_files(Path(str(path) + "\\" + category), False)
-            
-            
-def prepare_folder() -> None:                       # це для отладки 
-    TEST_FOLDER = "D:\\000"                         # особисто моєї отладки :)
+def list_files(path:Path) -> None:  # +++
+
+    list_files_write(path, True)                                  # for main dir
+    for element_path in path.iterdir():                           # for iterdirs
+        if element_path.is_dir():
+            list_files_write(element_path)
+
+"""================= для отладки ================="""
+def prepare_folder() -> None:
+    TEST_FOLDER = "D:\\000"
     SOURSE_FOLDER = "D:\\000_Original"
     shutil.rmtree(TEST_FOLDER, ignore_errors=True)
     p = input("press any key >>> ")  # пауза
     shutil.copytree(SOURSE_FOLDER, TEST_FOLDER)
-    
+"""================= для отладки ================="""
+
 
 def main() -> str:
     try:
@@ -145,13 +122,16 @@ def main() -> str:
     if not path.exists():
         return "Folder dos not exists"
     
-    # prepare_folder()        # прибрати - це для отладки
+    try:
+        is_replace = sys.argv[2]
+    except IndexError:
+        is_replace = False
     
-    prepare_trans()         # for transliteration
-    sort_folder(path)       
+    prepare_folder()        # прибрати - це для отладки
+    
+    sort_folder(path, is_replace)
     del_empty_tree(path)
     list_files(path)
-    list_files_category(path)
     archive_unpack(path)    # щоб файли з архівів теж були у списку, перенести цю строку вище
     
     return "\n*** Completed Successfully ***\n"
