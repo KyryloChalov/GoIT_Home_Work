@@ -127,7 +127,7 @@ def main() -> str:
     except IndexError:
         is_replace = False
     
-    prepare_folder()        # прибрати - це для отладки
+    # prepare_folder()        # прибрати - це для отладки
     
     sort_folder(path, is_replace)
     del_empty_tree(path)
